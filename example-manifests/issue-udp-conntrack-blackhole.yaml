@@ -1,0 +1,74 @@
+###
+# Issue: Clients can blackhole them selves via broken conntrack entries
+# Fixed: https://github.com/projectcalico/calico/issues/1055
+###
+kind: Service
+apiVersion: v1
+metadata:
+  name: udp-service
+spec:
+  selector:
+    type: server
+  ports:
+    - protocol: UDP
+      port: 4000
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: udp-client
+spec:
+  containers:
+  - name: udp-client-broken
+    image: "alpine"
+    # this client will hit the race condition
+    # ssh to the host and run this from host namespace:
+    #   - grep -w 4000 /proc/net/nf_conntrack
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        while true; do
+          echo client-1 $(date +%s)
+          sleep 1
+        done |
+        nc -v -u -p 2000 udp-service 4000
+  - name: udp-client-should-work
+    image: "alpine"
+    # the initial sleep here gives the endpoint time to get into place
+    command: 
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo waiting
+        sleep 60
+        echo starting
+        while sleep 1; do
+          echo client-2 $(date +%s)
+        done |
+        nc -v -u -p 3000 udp-service 4000
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: udp-service
+  labels:
+    type: server
+spec:
+  containers:
+  - name: udp-server
+    image: "ruby"
+    # using ruby to listen to multiple senders
+    command: 
+      - "/bin/sh"
+      - "-c"
+      - |
+        ruby -r socket -e '
+          $stdout.sync
+          s = UDPSocket.new
+          s.bind("0.0.0.0",4000)
+          loop do
+            m, c = s.recvfrom(4096)
+            puts m
+          end
+        '
