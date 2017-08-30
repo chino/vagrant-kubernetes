@@ -1,0 +1,62 @@
+##
+# Using a headless service with hostname/subdomain
+#   - as described here:
+#     - https://kubernetes.io/docs/concepts/services-networking/dns-pod-service
+#   - note that a hostname is a REQUIRED field
+#   - the port doesn't actually matter because clusterIP is none
+#     - we directly route to the pod ip
+#   - pod names will be:
+#     - <hostname>.<service>[.<namespace>.svc.cluster.local]
+#   - note:
+#     - it would be nice to have pod subdomains added to search path
+#     - that is an open issue still being debated:
+#       - https://github.com/kubernetes/kubernetes/issues/48019
+##
+kind: Service
+apiVersion: v1
+metadata:
+  name: pod
+spec:
+  clusterIP: None
+  selector:
+    resolve: 'true'
+  ports:
+    - protocol: TCP # this is actually pointless
+      port: 1234
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-1
+  labels:
+    resolve: 'true'
+spec:
+  hostname: pod-1
+  subdomain: pod
+  containers:
+  - name: container
+    image: "alpine"
+    command: ["/bin/sh", "-c", "while sleep 100; do :; done"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-2
+  labels:
+    resolve: 'true'
+spec:
+  hostname: pod-2
+  subdomain: pod
+  containers:
+  - name: container
+    image: "alpine"
+    command:
+    - "/bin/sh"
+    - "-c"
+    - |
+        while sleep 5; do
+                nslookup pod-1 # this will not work
+                nslookup pod-1.pod
+                nslookup pod-1.pod.default
+                nslookup pod-1.pod.default.svc.cluster.local
+        done
