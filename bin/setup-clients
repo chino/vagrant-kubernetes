@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -ex
+
+echo "setting up kubectl"
+which kubectl &>/dev/null || brew install kubectl
+kubectl config set-cluster vagrant-cluster --server=http://localhost:8080
+kubectl config set-context vagrant-system --cluster=vagrant-cluster
+kubectl config use-context vagrant-system
+kubectl cluster-info
+
+echo "setting up calicoctl"
+which calicoctl &>/dev/null || {
+	mkdir ~/bin &&
+	curl -L -o ~/bin/calicoctl https://github.com/projectcalico/calicoctl/releases/download/v1.4.0/calicoctl &&
+	chmod +x ~/bin/calicoctl
+}
+calicoctl node status

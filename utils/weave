@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+ip=$(ip a s eth1 | grep inet -w | awk '{print $2}' | cut -d/ -f 1)
+pod=$(kubectl get pods -o wide -n kube-system | grep weave-net | grep "$ip" | awk '{print $1}')
+kubectl exec "$pod" -c weave -n kube-system -it -- ./weave --local "$@"

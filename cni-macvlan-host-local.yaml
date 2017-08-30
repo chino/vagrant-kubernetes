@@ -1,0 +1,86 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flannel
+  namespace: kube-system
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: kube-flannel-cfg
+  namespace: kube-system
+  labels:
+    tier: node
+    app: flannel
+data:
+  ####
+  # host-local
+  #     this gives you unique ip within a host but not across hosts...
+  ####
+  cni-conf-eth0.json: |
+    {
+              "cniVersion": "0.2.0",
+              "name": "mynet",
+              "type": "macvlan",
+              "master": "eth1",
+              "ipam": {
+                        "type": "host-local",
+                        "subnet": "172.18.18.0/24",
+                        "rangeStart": "172.18.18.200",
+                        "rangeEnd": "172.18.18.254",
+                        "gateway": "172.18.18.1"
+              }
+    }
+  cni-conf-lo.json: |
+    {
+              "cniVersion": "0.2.0",
+              "type": "loopback"
+    }
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: kube-flannel-ds
+  namespace: kube-system
+  labels:
+    tier: node
+    app: flannel
+spec:
+  template:
+    metadata:
+      labels:
+        tier: node
+        app: flannel
+    spec:
+      hostNetwork: true
+      nodeSelector:
+        beta.kubernetes.io/arch: amd64
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      serviceAccountName: flannel
+      containers:
+      - name: install-cni
+        image: quay.io/coreos/flannel:v0.8.0-amd64
+        command: [ "/bin/sh", "-c", "set -e -x; cp -f /etc/kube-flannel/cni-conf-eth0.json /etc/cni/net.d/10-mynet.conf; cp -f /etc/kube-flannel/cni-conf-lo.json /etc/cni/net.d/99-localhost.conf; while true; do sleep 3600; done"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: cni
+          mountPath: /etc/cni/net.d
+        - name: flannel-cfg
+          mountPath: /etc/kube-flannel/
+        - name: run
+          mountPath: /run
+      volumes:
+        - name: run
+          hostPath:
+            path: /run
+        - name: cni
+          hostPath:
+            path: /etc/cni/net.d
+        - name: flannel-cfg
+          configMap:
+            name: kube-flannel-cfg

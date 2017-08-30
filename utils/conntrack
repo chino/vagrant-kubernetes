@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+docker run --privileged --net=host -i --rm --name=conntrack claesjonsson/conntrack "$@"
