@@ -1,0 +1,40 @@
+###
+# Description:
+#   You might want to force endpoint changes to reset tcp connections.
+#   This was only a test but it's not really working yet.
+#   You would have to query k8s api to get list of tcp services to fix them up...
+# See:
+#   https://github.com/kubernetes/kubernetes/issues/48719
+###
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+ name: example
+ namespace: kube-system
+ labels:
+   name: example
+spec:
+ template:
+   metadata:
+     labels:
+       name: example
+   spec:
+     hostNetwork: true
+     containers:
+       - name: conntrack
+         image: "claesjonsson/conntrack"
+         command:
+           - '/bin/sh'
+           - '-c'
+           - |
+             service_ip=...
+             while sleep 1; do
+               conntrack -D conntrack -n $service_ip -p tcp
+               conntrack -D conntrack -g $service_ip -p tcp
+               conntrack -D conntrack -r $service_ip -p tcp
+               conntrack -D conntrack -q $service_ip -p tcp
+             done
+         securityContext:
+           capabilities:
+             add:
+               - NET_ADMIN
