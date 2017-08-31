@@ -1,0 +1,79 @@
+##
+# Description:
+#   Hashes clients across multiple servers
+#   To see the distribution of clients just tail logs on any of the servers
+###
+kind: Service
+apiVersion: v1
+metadata:
+  name: group-1-service
+spec:
+  selector:
+    publish: group-1
+    active: 'true'
+  ports:
+    - protocol: UDP
+      name: messages
+      port: 2000
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: group-1-primary
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        publish: group-1
+        active: 'true'
+    spec:
+      containers:
+      - name: server
+        image: ruby
+        command:
+          - /bin/sh
+          - -c
+          - |
+            ruby -e '
+              require "json"
+              require "open-uri"
+    
+              $stdout.sync=true
+ 
+              def get_pods **labels
+                selector = labels.map{|k,v| [k,v].join("%3D") }.join("&")
+                url = "http://172.18.18.101:8080/api/v1/namespaces/default/pods?labelSelector=#{selector}"
+                JSON.load(open(url).read)["items"].map{|i| i["status"]["podIP"]}.compact.sort
+              end
+
+              loop do
+                clients = get_pods join: "group-1"
+                servers = get_pods publish: "group-1"
+  
+                puts Time.now
+                servers.each_with_index do |s,si|
+                  ips = clients.each_with_index.select{|c,ci| ci % servers.length == si}.map(&:first)
+                  puts "server #{s} handling clients: #{ips.join(", ")}"
+                end
+                puts
+
+                sleep 1
+              end
+            '
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: client
+spec:
+  replicas: 6
+  template:
+    metadata:
+      labels:
+        join: group-1
+    spec:
+      containers:
+      - name: client
+        image: alpine
+        command: ["/bin/sh","-c","while true; do sleep 60; done"]
