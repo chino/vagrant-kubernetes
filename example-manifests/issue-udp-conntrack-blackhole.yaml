@@ -64,7 +64,7 @@ spec:
       - "-c"
       - |
         ruby -r socket -e '
-          $stdout.sync
+          $stdout.sync=true
           s = UDPSocket.new
           s.bind("0.0.0.0",4000)
           loop do
