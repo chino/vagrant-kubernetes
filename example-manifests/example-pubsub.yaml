@@ -1,0 +1,169 @@
+##
+# Description:
+#   This is an example of using k8s labels to build a pub/sub system
+#     - clients send messages to a service
+#       - the service can be dynamically repointed like a vip
+#       - you could even have clients send directly to multiple instances
+#     - the service forwards those messages to all clients
+#       - clients are enumerated through the k8s api by having a join label
+#       - an app can directly forward messages to clients
+#         - or you can use a separate sidecar like we do here
+# Commands:
+#   - list pods related to the group:
+#     - kubectl get pods --show-labels=true -o wide
+#     - kubectl get pods -l publish=group-1 -l active=true
+#     - kubectl get pods -l publish=group-1
+#     - kubectl get pods -l join=group-1
+#   - inspect logs:
+#     - kubectl logs -f client-1 -c group-listener
+#   - repoint a service to another container:
+#     - kubectl label pods group-1-primary active=false --overwrite=true
+#     - kubectl label pods group-1-secondary active=true
+###
+kind: Service
+apiVersion: v1
+metadata:
+  name: group-1-service
+spec:
+  selector:
+    publish: group-1
+    active: 'true'
+  ports:
+    - protocol: UDP
+      name: "messages"
+      port: 2000
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: group-1-primary
+  labels:
+    publish: group-1
+    active: 'true'
+spec:
+  containers:
+  - name: message-receiver
+    image: "ruby"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        ruby -e '
+          require "socket"
+          $stdout.sync=true # no buffering stdout
+          socket = UDPSocket.new
+          socket.bind("0.0.0.0",2000) # listen for packets on port 2000
+          loop do
+            msg = socket.recv(65507)
+            puts msg
+            socket.send(msg,0,"localhost",6000) # forward to the replicator
+          end
+        '
+  - name: message-replicator
+    image: "ruby"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        ruby -e '
+          require "json"
+          require "open-uri"
+          require "socket"
+
+          $stdout.sync=true
+
+          # we could periodically query api instead of hitting it every message
+          def get_ips
+            url = "http://172.18.18.101:8080/api/v1/namespaces/default/pods?labelSelector=join%3Dgroup-1"
+            JSON.load(open(url).read)["items"].map{|i| i["status"]["podIP"]}
+          end
+
+          socket = UDPSocket.new
+          socket.bind("0.0.0.0",6000)
+
+          loop do
+            msg = socket.recv(65607)
+            puts "got message: #{msg}"
+            get_ips.each do |ip|
+              puts "forwarding to ip: #{ip}"
+              socket.send(msg,0,ip,7000)
+            end
+          end
+        '
+######
+# Rewrote this in ruby above because `nc` forced us to use `-w 1` which was too slow
+# Leaving it here as an example of how easy it can be
+######
+#  - name: message-replicator
+#    image: "alpine"
+#    command:
+#      - "/bin/sh"
+#      - "-c"
+#      - |
+#        set -ex
+#        apk update && apk add jq # used for parsing json
+#        nc -u -lk -p 6000 |
+#          {
+#            count=0
+#            while read -r message; do
+#              # periodically query k8s api for new pods
+#              let '++count % 10 == 1' &&
+#                ips=$(
+#                  wget -q -O - http://172.18.18.101:8080/api/v1/namespaces/default/pods?labelSelector=join%3Dgroup-1 |
+#                  jq -r .items[].status.podIP
+#                )
+#              echo "forwarding, '$message' to:" $ips
+#              for ip in $ips; do
+#                # note: was forced to add `-w 1` here because of `nc` behavior
+#                #       we should probably just rewrite this in ruby
+#                echo "$message" | nc -w 1 -u -p 8181 "$ip" 7000
+#              done
+#            done
+#          }
+######
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-1
+  labels:
+    join: group-1
+spec:
+  containers:
+  - name: group-sender
+    image: "alpine"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        while sleep 1; do
+          echo $(date +%s) $HOSTNAME
+        done |
+        tee -a /dev/stderr |
+        nc -u -p 1000 group-1-service 2000
+  - name: group-listener
+    image: "alpine"
+    command: ["/bin/sh", "-c", "nc -u -kl -p 7000"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-2
+  labels:
+    join: group-1
+spec:
+  containers:
+  - name: group-sender
+    image: "alpine"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        while sleep 1; do
+          echo $(date +%s) $HOSTNAME
+        done |
+        tee -a /dev/stderr |
+        nc -u -p 1000 group-1-service 2000
+  - name: group-listener
+    image: "alpine"
+    command: ["/bin/sh", "-c", "nc -u -kl -p 7000"]
