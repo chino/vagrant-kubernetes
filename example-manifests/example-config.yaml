@@ -1,0 +1,96 @@
+###
+# Description:
+#   Example showing how to pass configs to the container.
+#
+# To see the logs:
+#   kubectl logs config-example
+#
+# Output should be:
+#    FOO=bar
+#    NAMESPACE=default
+#    CONFIG_JSON={
+#      "some": "data"
+#    }
+#
+#    config: /etc/config/config.json
+#    --------
+#    {
+#      "some": "data"
+#    }
+#    --------
+#
+#    querying an external store (k8s api shown here) for dynamic data
+#    {
+#      "kind": "APIVersions",
+#      "versions": [
+#        "v1"
+#      ],
+#      "serverAddressByClientCIDRs": [
+#        {
+#          "clientCIDR": "0.0.0.0/0",
+#          "serverAddress": "172.18.18.101:6443"
+#        }
+#      ]
+###
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: config-example
+data:
+  config.json: |
+    {
+      "some": "data"
+    }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: config-example
+spec:
+  restartPolicy: Always
+  containers:
+  - name: alpine
+    image: alpine
+    imagePullPolicy: IfNotPresent
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "FOO=$FOO"
+        echo "NAMESPACE=$NAMESPACE"
+        echo "CONFIG_JSON=$CONFIG_JSON"
+
+        path=/etc/config/config.json
+        echo "config: $path"
+        echo --------
+        cat "$path"
+        echo --------
+        echo
+
+        echo "querying an external store (k8s api shown here) for dynamic data"
+        wget -q -O - http://172.18.18.101:8080/api
+
+        # don't die
+        while true; do sleep 60; done
+    env:
+    - name: CONFIG_JSON
+      valueFrom:
+        configMapKeyRef:
+          name: config-example
+          key: config.json
+    - name: FOO
+      value: bar
+    - name: NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    volumeMounts:
+    - name: config
+      mountPath: /etc/config
+  # you can also mount config maps
+  # key/values will show up as file/contents
+  # the mount is periodically synced with the configmap
+  volumes:
+    - name: config
+      configMap:
+        name: config-example
