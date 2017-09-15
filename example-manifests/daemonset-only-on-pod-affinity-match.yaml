@@ -1,0 +1,84 @@
+###
+# This was an attempt at a daemonset that has affinity to a set of pods
+# sharing a mount between all of them
+###
+# Issues:
+#   DaemonSets don't respect pod affinity yet
+#     - https://groups.google.com/forum/#!topic/kubernetes-dev/STe0UXt9KHE
+#   PodAffinity will not auto delete daemonsets once match no longer holds
+###
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: main
+spec:
+  replicas: 6
+  template:
+    metadata:
+      labels:
+        app: main
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - main
+              topologyKey: "kubernetes.io/hostname"
+      initContainers:
+      - name: wait
+        image: alpine
+        # wait for any file to show up in /tmp/shared
+        # the singleton will create a file there to notify us it's ready
+        command: ["/bin/sh","-c","while true; do ls /tmp/shared; [[ \"$(ls /tmp/shared)\" ]] && break; sleep 1; done; touch /tmp/shared/$HOSTNAME.alive"]
+        volumeMounts:
+        - name: shared
+          mountPath: /tmp/shared
+      containers:
+      - name: main
+        image: alpine
+        command: ["/bin/sh","-c","while true; do ls /tmp/shared; sleep 1; done"]
+        volumeMounts:
+        - name: shared
+          mountPath: /tmp/shared
+      volumes:
+      - name: shared
+        hostPath:
+          path: /tmp/shared
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: singleton
+spec:
+  template:
+    metadata:
+      labels:
+        name: singleton
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - main
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: singleton
+        image: alpine
+        command: ["/bin/sh","-c","touch /tmp/shared/singleton.alive; while true; do ls /tmp/shared; sleep 60; done"]
+        volumeMounts:
+        - name: shared
+          mountPath: /tmp/shared
+      volumes:
+      - name: shared
+        hostPath:
+          path: /tmp/shared
