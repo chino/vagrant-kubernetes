@@ -11,7 +11,7 @@ kubectl cluster-info
 
 echo "setting up calicoctl"
 which calicoctl &>/dev/null || {
-	mkdir ~/bin &&
+	mkdir -p ~/bin &&
 	curl -L -o ~/bin/calicoctl https://github.com/projectcalico/calicoctl/releases/download/v1.4.0/calicoctl &&
 	chmod +x ~/bin/calicoctl
 }
