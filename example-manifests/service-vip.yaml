@@ -5,8 +5,8 @@
 #   This will only properly behave correctly on k8s v1.7.1+ with
 #   the udp conntrack bug properly fixed.
 # Redirect:
-#   kubectl label pods primary active=false --overwrite=true
-#   kubectl label pods backup active=true
+#   kubectl label pods primary role-
+#   kubectl label pods backup role=active-primary
 # Notes:
 #   Kube-Proxy will clear conntrack entries only for UDP services.
 #   Hence the example client below will be forced to the new endpoint only for udp.
