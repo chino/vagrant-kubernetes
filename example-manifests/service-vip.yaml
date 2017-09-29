@@ -43,7 +43,7 @@ spec:
     image: "ruby"
     # without the reply conntrack shows `UNREPLIED` and with the reply it shows `ASSURED`
     # check with `sudo cat /proc/net/nf_conntrack | grep -w 80 | grep -w udp`
-    command: ["/bin/sh", "-c", "ruby -r socket -e 'puts :starting; $stdout.flush; s = UDPSocket.new; s.bind(\"0.0.0.0\",80); loop { m, c = s.recvfrom(4096); puts m; $stdout.flush; s.send(\"hi\",0,c[3],c[1]); }'"]
+    command: ["/bin/sh", "-c", "ruby -r socket -e 'puts :starting; $stdout.flush; s = UDPSocket.new; s.bind(\"0.0.0.0\",80); loop { m, c = s.recvfrom(100); puts m; $stdout.flush; s.send(\"hi\",0,c[3],c[1]); }'"]
 ---
 apiVersion: v1
 kind: Pod
@@ -56,7 +56,7 @@ spec:
     command: ["/bin/sh", "-c", "echo starting; while sleep 1; do echo $(date +%s) = $HOSTNAME; done | nc -lk -p 80"]
   - name: backup-udp
     image: "ruby"
-    command: ["/bin/sh", "-c", "ruby -r socket -e 'puts :starting; $stdout.flush; s = UDPSocket.new; s.bind(\"0.0.0.0\",80); loop { m, c = s.recvfrom(4096); puts m; $stdout.flush; s.send(\"hi\",0,c[3],c[1]); }'"]
+    command: ["/bin/sh", "-c", "ruby -r socket -e 'puts :starting; $stdout.flush; s = UDPSocket.new; s.bind(\"0.0.0.0\",80); loop { m, c = s.recvfrom(100); puts m; $stdout.flush; s.send(\"hi\",0,c[3],c[1]); }'"]
 ---
 apiVersion: v1
 kind: Pod

@@ -68,7 +68,7 @@ spec:
           s = UDPSocket.new
           s.bind("0.0.0.0",4000)
           loop do
-            m, c = s.recvfrom(4096)
+            m, c = s.recvfrom(100)
             puts m
           end
         '

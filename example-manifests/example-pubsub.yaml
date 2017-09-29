@@ -54,7 +54,7 @@ spec:
           socket = UDPSocket.new
           socket.bind("0.0.0.0",2000) # listen for packets on port 2000
           loop do
-            msg = socket.recv(65507)
+            msg = socket.recv(100)
             puts msg
             socket.send(msg,0,"localhost",6000) # forward to the replicator
           end
@@ -82,7 +82,7 @@ spec:
           socket.bind("0.0.0.0",6000)
 
           loop do
-            msg = socket.recv(65607)
+            msg = socket.recv(100)
             puts "got message: #{msg}"
             get_ips.each do |ip|
               puts "forwarding to ip: #{ip}"
