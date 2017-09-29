@@ -124,7 +124,7 @@ host.vm.provision :shell, :inline => "
 
     if [[ '#{ENV['EXTRAS']}' == true ]]; then
       echo installing k8 dashboard
-      kubectl apply -f https://rawgit.com/kubernetes/dashboard/master/src/deploy/kubernetes-dashboard.yaml
+      kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/master/src/deploy/alternative/kubernetes-dashboard.yaml
       kubectl get pods --all-namespaces
 
       echo installing heapster for container metrics and graphs in ui
