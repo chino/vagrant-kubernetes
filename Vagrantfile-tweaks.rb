@@ -7,6 +7,9 @@ host.vm.box_version = ">= 1409.7.0"
 # this is required to allow multicast data to pass on the vbox host-only network
 host.vm.provider :virtualbox do |vb|
   vb.customize [ "modifyvm", :id, "--nicpromisc2", "allow-all" ]
+  vb.customize [ "modifyvm", :id, "--ioapic", "on" ] # required for more than 1 cpu
+  vb.memory = 1024
+  vb.cpus = 2
 end
 
 # add vagrant folder for easy access
