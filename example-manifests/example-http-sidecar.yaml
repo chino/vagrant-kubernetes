@@ -1,0 +1,110 @@
+# vim: set ts=2 sw=2 et :
+##
+# Example shows how to get away from need to use `kubectl exec` by
+# wrapping a service in a little http sidecar.
+##
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-http-sidecar
+  labels:
+    name: example-http-sidecar
+spec:
+  containers:
+  - name: app
+    image: ruby
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # emulate a simple tcp admin port on an app
+        ruby -r socket -e '
+          warn "starting admin server"
+          s = TCPServer.new 1500
+          loop do
+            warn "got new connection"
+            c = s.accept
+            request = c.gets
+            warn "new request: #{request}"
+            c.puts "you asked for: #{request}"
+            c.puts "this could be a multiline response"
+            c.close
+          end
+        '
+  - name: http-wrapper
+    image: ruby
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # this could be a slim Go binary with concurrency support
+        # you would want some type of ssl + auth + logging as well
+        gem install sinatra
+        ruby -r sinatra -r socket -e '
+          set :port, 80
+          set :bind, "0.0.0.0"
+          get("/*") do |request|
+            warn "got new request #{request}"
+            response = TCPSocket.open("localhost",1500) do |s|
+              s.puts request
+              s.readlines.join
+            end
+            warn "response: #{response}"
+            response
+          end
+        '
+---
+##
+# this is needed to hit the pod above from the test pod below
+# in a real setup you could:
+#   - use the headless service trick to give all pods a dns entry
+#   - use kubectl to query for pod ip and directly connect to it
+#     ony if you have directly addressable pods (ex: via calico)
+##
+kind: Service
+apiVersion: v1
+metadata:
+  name: example-http-sidecar
+spec:
+  selector:
+    name: example-http-sidecar
+  ports:
+    - protocol: TCP
+      name: "http"
+      port: 80
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-client
+spec:
+  containers:
+  - name: example-client
+    image: alpine
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while ! nc -w 1 -zv example-http-sidecar 80; do
+          echo "waiting for sidecar to start"
+          sleep 1
+        done
+        echo "... server is responsive ..."
+        echo
+
+        # this would be wrapper in a friendly script
+        # client certs or OAuth could be integrated
+        function cmd
+        {
+          local host=$1; shift
+          echo "running $host $*"
+          wget -q -O - "http://$host/$*"
+        }
+
+        # example requests
+        # kubectl logs -f example-client
+        cmd example-http-sidecar list
+        cmd example-http-sidecar run/some/command
+
+        # let container hang forever
+        while true; do sleep 600; done
