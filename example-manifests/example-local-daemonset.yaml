@@ -1,0 +1,71 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: example-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: example-daemonset
+  template:
+    metadata:
+      labels:
+        app: example-daemonset
+    spec:
+      containers:
+      - name: example
+        image: tomcat:alpine
+        ports:
+        - containerPort: 8080
+          hostPort: 8080
+
+---
+
+kind: Deployment
+apiVersion: apps/v1beta1
+metadata:
+  name: example-node-and-pod-info
+spec:
+  replicas: 10
+  template:
+    metadata:
+      labels:
+        app: example-node-and-pod-info
+    spec:
+      containers:
+        - name: test
+          image: centos
+          command: ["bash", "-c"]
+          args:
+          - |
+            echo $node_name
+            echo $node_ip
+            echo $my_ip
+
+            curl --head -L $node_ip:8080
+
+            while true; do sleep 1; done
+          env:
+          - name: node_name
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: node_ip
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: my_ip
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+      initContainers:
+        - name: wait-for-daemonset
+          image: centos
+          command: ["bash", "-c"]
+          args:
+          - |
+            while ! curl --head -L $node_ip:8080; do sleep 1; done
+          env:
+          - name: node_ip
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
