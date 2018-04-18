@@ -1,0 +1,112 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: example-daemonset-3
+spec:
+  selector:
+    matchLabels:
+      app: example-daemonset
+  template:
+    metadata:
+      labels:
+        app: example-daemonset
+    spec:
+      containers:
+      - name: example
+        image: tomcat:alpine
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-account
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-role
+rules:
+- apiGroups:
+  - extensions
+  resources:
+  - daemonsets
+  - daemonsets/status
+  - pod
+  - pod/status
+  verbs:
+  - get
+  - list
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-role
+roleRef:
+  apiGroup: ""
+  kind: Role
+  name: test-role
+subjects:
+- kind: ServiceAccount
+  name: test-account
+
+---
+
+kind: Deployment
+apiVersion: apps/v1beta1
+metadata:
+  name: example-node-and-pod-info
+spec:
+  replicas: 10
+  template:
+    metadata:
+      labels:
+        app: example-node-and-pod-info
+    spec:
+      serviceAccountName: test-account
+      containers:
+        - name: test
+          image: ruby
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            namespace=$(</var/run/secrets/kubernetes.io/serviceaccount/namespace)
+            token=$(</var/run/secrets/kubernetes.io/serviceaccount/token)
+            cert=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+            function get
+            {
+              curl -sS --cacert $cert -H "Authorization: Bearer $token" \
+                "https://kubernetes.default.svc/$*"
+            }
+
+            # search until we find the ip of the local daemonset
+            while ! [[ $ds_ip ]]; do
+              ds_ip=$(
+                get api/v1/namespaces/$namespace/pods |
+                  ruby -r json -e '
+                    puts JSON.load(STDIN)["items"].find{|pod|
+                      pod["metadata"]["ownerReferences"].find{|ref|
+                        ref["kind"] == "DaemonSet" &&
+                        ref["name"] == "example-daemonset-3"
+                      } &&
+                      pod["spec"]["nodeName"] == ENV["NODE"]
+                    }["status"]["podIP"]
+                  '
+              )
+              sleep 1
+            done
+
+            curl -L $ds_ip:8080
+
+            while true; do sleep 1; done
+
+          env:
+          - name: NODE
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
